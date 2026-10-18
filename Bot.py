@@ -20,7 +20,7 @@ def run_server():
 Thread(target=run_server, daemon=True).start()
 
 # --- CONFIGURACIÓN DE TU BOT DE TRADING ---
-TOKEN = "8721042176:AAGW4GcUn9N17jysRT9CG1E50jPaD3jMSk"
+TOKEN = "8721042176:AAGW4GcUn9mN17jysrT9CGlE50jPaD3jMSk"
 CHAT_ID = "1828560047"
 
 print("🚀 Bot iniciado correctamente en la nube. Verificando Telegram...")
@@ -42,4 +42,5 @@ except Exception as e:
 while True:
     print("⏳ Ciclo de espera activo... (El bot está en línea)")
     time.sleep(120)
+
 
