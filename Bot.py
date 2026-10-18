@@ -3,12 +3,12 @@ import time
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# --- SERVIDOR FALSO PARA MANTENER RENDER ACTIVO ---
+# --- SERVIDOR PARA MANTENER RENDER ACTIVO 24/7 ---
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot Binance Volatilidad y Muros Activo 24/7")
+        self.wfile.write(b"Bot Binance Spot & Futuros Activo 24/7")
 
 def run_server():
     server_address = ('', 10000)
@@ -32,24 +32,32 @@ def enviar_telegram(mensaje):
         print(f"❌ Error enviando mensaje a Telegram: {e}")
         return False
 
-# --- ENLACES DE BINANCE ---
-ENDPOINTS_BINANCE = [
-    "https://api.binance.com",
-    "https://api1.binance.com",
-    "https://api2.binance.com",
-    "https://api3.binance.com"
-]
-
-def obtener_datos(path, params=None):
-    for base_url in ENDPOINTS_BINANCE:
-        try:
-            url = base_url + path
-            r = requests.get(url, params=params, timeout=5)
-            if r.status_code == 200:
-                return r.json()
-        except Exception:
-            continue
+# --- OBTENER DATOS SPOT Y FUTUROS ---
+def obtener_libro_spot(simbolo):
+    try:
+        url = f"https://api.binance.com/api/v3/depth?symbol={simbolo}&limit=10"
+        r = requests.get(url, timeout=5)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
     return None
+
+def obtener_libro_futuros(simbolo):
+    try:
+        url = f"https://fapi.binance.com/fapi/v1/depth?symbol={simbolo}&limit=10"
+        r = requests.get(url, timeout=5)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+    return None
+
+def sumar_volumen_usdt(lista_ordenes):
+    total = 0.0
+    for precio, cantidad in lista_ordenes:
+        total += float(precio) * float(cantidad)
+    return total
 
 # Criptomonedas a monitorear
 SIMBOLOS = [
@@ -58,30 +66,39 @@ SIMBOLOS = [
     "LINKUSDT", "NEARUSDT", "SUIUSDT", "PEPEUSDT"
 ]
 
-# UMBRAL AJUSTADO A $5,000 USDT PARA CAPTURAR ÓRDENES REALES Y EVITAR SPOOFING
-UMBRAL_MURO_USDT = 5000  # $5,000 USDT
+# Umbral de filtro por orden individual ($5,000 USDT)
+UMBRAL_MURO_USDT = 5000 
 
 alertas_enviadas = {}
 
-print("🚀 Bot iniciando en la nube...")
+print("🚀 Bot Spot + Futuros iniciando en la nube...")
 
-# --- MENSAJE INMEDIATO DE PRUEBA Y CONEXIÓN ---
-mensaje_prueba = "⚡ *ACTUALIZACIÓN APLICADA*\n\n🎯 Umbral de muros ajustado a **$5,000 USDT** para rastrear ejecuciones reales del 1%."
+# --- MENSAJE DE PRUEBA ---
+mensaje_prueba = "⚡ *BOT ACTUALIZADO: SPOT Y FUTUROS*\n\n🎯 Vigilando libros de ordenes en Spot y Perpetuos para detectar presion de compra/venta."
 enviar_telegram(mensaje_prueba)
 
-# --- BUCLE PRINCIPAL DE RASTREO ---
+# --- BUCLE DE RASTREO ---
 while True:
     try:
         for simbolo in SIMBOLOS:
-            depth = obtener_datos("/api/v3/depth", params={"symbol": simbolo, "limit": 20})
-            if not depth or "bids" not in depth:
-                continue
+            spot_data = obtener_libro_spot(simbolo)
+            futuros_data = obtener_libro_futuros(simbolo)
             
-            bids = depth["bids"]
-            for precio_str, cantidad_str in bids[:10]:
+            if not spot_data or not futuros_data:
+                continue
+
+            # Evaluar compras (Bids) y ventas (Asks) en Spot
+            bids_spot_total = sumar_volumen_usdt(spot_data.get("bids", []))
+            asks_spot_total = sumar_volumen_usdt(spot_data.get("asks", []))
+
+            # Evaluar compras (Bids) y ventas (Asks) en Futuros
+            bids_fut_total = sumar_volumen_usdt(futuros_data.get("bids", []))
+            asks_fut_total = sumar_volumen_usdt(futuros_data.get("asks", []))
+
+            # Buscar muros individuales de soporte en Spot (Bids)
+            for precio_str, cantidad_str in spot_data.get("bids", [])[:5]:
                 precio = float(precio_str)
-                cantidad = float(cantidad_str)
-                total_usdt = precio * cantidad
+                total_usdt = precio * float(cantidad_str)
                 
                 if total_usdt >= UMBRAL_MURO_USDT:
                     clave_alerta = f"{simbolo}_{precio_str}"
@@ -90,18 +107,23 @@ while True:
                     if clave_alerta not in alertas_enviadas or (tiempo_actual - alertas_enviadas[clave_alerta]) > 900:
                         alertas_enviadas[clave_alerta] = tiempo_actual
                         
+                        # Determinar tendencia por presion general de libros
+                        presion_spot = "🟢 COMPRA" if bids_spot_total > asks_spot_total else "🔴 VENTA"
+                        presion_fut = "🟢 COMPRA" if bids_fut_total > asks_fut_total else "🔴 VENTA"
+
                         msg = (
-                            f"🧱 *¡MURO DE SOPORTE DETECTADO!*\n\n"
-                            f"📌 *Par:* `{simbolo}`\n"
-                            f"💵 *Precio:* `{precio:,.4f} USDT`\n"
-                            f"📊 *Volumen del Muro:* `{total_usdt:,.2f} USDT` (`{cantidad:,.2f}` monedas)\n\n"
-                            f"⚡ _Oportunidad de rebote / orden de soporte activa._"
+                            f"📊 *ANÁLISIS DE MERCADO: {simbolo}*\n\n"
+                            f"🧱 *Muro Spot Detectado:* `{precio:,.4f} USDT` (`${total_usdt:,.2f} USDT`)\n\n"
+                            f"📈 *Presión en Libros (Top 10):*\n"
+                            f"🔹 *Spot:* {presion_spot} (Bids: `${bids_spot_total:,.0f}` | Asks: `${asks_spot_total:,.0f}`)\n"
+                            f"🔹 *Futuros:* {presion_fut} (Bids: `${bids_fut_total:,.0f}` | Asks: `${asks_fut_total:,.0f}`)\n\n"
+                            f"💡 _Si ambos mercados muestran presión de COMPRA, aumenta la probabilidad de subida del 1%._"
                         )
-                        print(f"🔔 Muro detectado en {simbolo} @ {precio}: {total_usdt} USDT")
+                        print(f"🔔 Alerta enviada para {simbolo}")
                         enviar_telegram(msg)
                         
         time.sleep(30)
 
     except Exception as e:
-        print(f"⚠️ Error durante el ciclo de escaneo: {e}")
+        print(f"⚠️ Error en el ciclo: {e}")
         time.sleep(10)
