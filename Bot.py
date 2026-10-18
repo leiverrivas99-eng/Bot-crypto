@@ -28,7 +28,7 @@ print("🚀 Bot iniciado correctamente en la nube. Verificando Telegram...")
 # --- PRUEBA DIRECTA CON DIAGNÓSTICO DE TELEGRAM ---
 try:
     url_test = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": "🔔 ¡Prueba de diagnóstico: El bot está vivo!"}
+    payload = {"chat_id": CHAT_ID, "text": "🔔 ¡Prueba de diagnóstico: El bot está conectado con éxito!"}
     
     respuesta = requests.post(url_test, json=payload, timeout=10)
     
@@ -38,7 +38,7 @@ try:
 except Exception as e:
     print(f"❌ Error crítico al conectar con Telegram: {e}")
 
-# Bucle simple para mantener el script corriendo sin errores de Binance por ahora
+# Bucle simple para mantener el script corriendo
 while True:
     print("⏳ Ciclo de espera activo... (El bot está en línea)")
     time.sleep(120)
