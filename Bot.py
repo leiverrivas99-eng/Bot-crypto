@@ -19,16 +19,18 @@ def run_server():
 Thread(target=run_server, daemon=True).start()
 
 # --- CONFIGURACIÓN DE TELEGRAM ---
-TOKEN = "8721042176:AAGW4GcUn9N17jysrT9CGlE50jPaD3jMSk"
+TOKEN = "8721042176:AAGW4GcUn9mN17jysrT9CGlE50jPaD3jMSk"
 CHAT_ID = "1828560047"
 
 def enviar_telegram(mensaje):
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
         payload = {"chat_id": CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}
-        requests.post(url, json=payload, timeout=10)
+        r = requests.post(url, json=payload, timeout=10)
+        return r.status_code == 200
     except Exception as e:
         print(f"❌ Error enviando mensaje a Telegram: {e}")
+        return False
 
 # --- ENLACES DE BINANCE (ENDPOINTS DE RESPALDO) ---
 ENDPOINTS_BINANCE = [
@@ -49,7 +51,7 @@ def obtener_datos(path, params=None):
             continue
     return None
 
-# Criptomonedas a monitorear (puedes agregar más pares USDT)
+# Criptomonedas a monitorear
 SIMBOLOS = [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", 
     "XRPUSDT", "ADAUSDT", "DOGEUSDT", "AVAXUSDT", 
@@ -57,25 +59,31 @@ SIMBOLOS = [
 ]
 
 # Umbral en USDT para considerar una "pared de compra" (muro de soporte)
-UMBRAL_MURO_USDT = 50000  # $50,000 USDT en un solo nivel de precio
+UMBRAL_MURO_USDT = 50000  # $50,000 USDT
 
-# Registro para evitar enviar alertas repetidas seguidas del mismo precio
 alertas_enviadas = {}
 
-print("🚀 Bot de detección de Muros de Soporte iniciado correctamente...")
-enviar_telegram("🤖 *Bot de Trading Iniciado*\n\nVigilando libros de órdenes de Binance 24/7 en busca de muros de soporte ($50k+ USDT).")
+print("🚀 Bot iniciando en la nube...")
 
+# --- MENSAJE INMEDIATO DE PRUEBA Y CONEXIÓN ---
+mensaje_prueba = "⚡ *PRUEBA DE CONEXIÓN EXITOSA*\n\n🟢 El bot de Binance se ha desplegado correctamente en Render y está monitoreando el mercado 24/7."
+exito = enviar_telegram(mensaje_prueba)
+
+if exito:
+    print("✅ Mensaje de prueba enviado a Telegram con éxito.")
+else:
+    print("❌ Falló el envío del mensaje de prueba. Revisa el token o ID.")
+
+# --- BUCLE PRINCIPAL DE RASTREO ---
 while True:
     try:
         for simbolo in SIMBOLOS:
-            # Obtener el libro de órdenes (Order Book - Bids/Asks)
             depth = obtener_datos("/api/v3/depth", params={"symbol": simbolo, "limit": 20})
             if not depth or "bids" not in depth:
                 continue
             
-            # Analizar las ofertas de compra (bids = soportes/muros)
             bids = depth["bids"]
-            for precio_str, cantidad_str in bids[:10]:  # Evaluar los 10 mejores niveles
+            for precio_str, cantidad_str in bids[:10]:
                 precio = float(precio_str)
                 cantidad = float(cantidad_str)
                 total_usdt = precio * cantidad
@@ -84,7 +92,6 @@ while True:
                     clave_alerta = f"{simbolo}_{precio_str}"
                     tiempo_actual = time.time()
                     
-                    # Notificar solo si no hemos enviado esta misma alerta en los últimos 15 minutos (900 seg)
                     if clave_alerta not in alertas_enviadas or (tiempo_actual - alertas_enviadas[clave_alerta]) > 900:
                         alertas_enviadas[clave_alerta] = tiempo_actual
                         
@@ -93,12 +100,12 @@ while True:
                             f"📌 *Par:* `{simbolo}`\n"
                             f"💵 *Precio:* `{precio:,.4f} USDT`\n"
                             f"📊 *Volumen del Muro:* `{total_usdt:,.2f} USDT` (`{cantidad:,.2f}` monedas)\n\n"
-                            f"⚡ _Posible zona de rebotador / fuerte demanda._"
+                            f"⚡ _Posible zona de rebote / fuerte demanda._"
                         )
                         print(f"🔔 Muro detectado en {simbolo} @ {precio}: {total_usdt} USDT")
                         enviar_telegram(msg)
                         
-        time.sleep(30)  # Revisa el mercado cada 30 segundos
+        time.sleep(30)
 
     except Exception as e:
         print(f"⚠️ Error durante el ciclo de escaneo: {e}")
