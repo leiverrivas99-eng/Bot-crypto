@@ -31,6 +31,9 @@ DISTANCIA_MAX_PCT = 3.5
 
 print("🚀 Bot iniciado correctamente en la nube. Monitoreando Binance 24/7...")
 
+# --- PRUEBA INMEDIATA DE TELEGRAM ---
+requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": "🔔 ¡Bot encendido y conectado con éxito!"})
+
 # --- BUCLE INFINITO PARA ANALIZAR CADA 2 MINUTOS ---
 while True:
     try:
