@@ -32,7 +32,12 @@ DISTANCIA_MAX_PCT = 3.5
 print("🚀 Bot iniciado correctamente en la nube. Monitoreando Binance 24/7...")
 
 # --- PRUEBA INMEDIATA DE TELEGRAM ---
-requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": "🔔 ¡Bot encendido y conectado con éxito!"})
+try:
+    url_test = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    requests.post(url_test, json={"chat_id": CHAT_ID, "text": "🔔 ¡Bot encendido y conectado con éxito!"}, timeout=10)
+    print("✅ Mensaje de prueba enviado a Telegram.")
+except Exception as e:
+    print(f"⚠️ Error al enviar mensaje de prueba: {e}")
 
 # --- BUCLE INFINITO PARA ANALIZAR CADA 2 MINUTOS ---
 while True:
@@ -118,3 +123,4 @@ while True:
 
     # Esperar 2 minutos (120 segundos) antes de volver a revisar
     time.sleep(120)
+
