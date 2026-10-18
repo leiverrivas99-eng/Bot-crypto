@@ -32,7 +32,7 @@ def enviar_telegram(mensaje):
         print(f"❌ Error enviando mensaje a Telegram: {e}")
         return False
 
-# --- ENLACES DE BINANCE (ENDPOINTS DE RESPALDO) ---
+# --- ENLACES DE BINANCE ---
 ENDPOINTS_BINANCE = [
     "https://api.binance.com",
     "https://api1.binance.com",
@@ -58,21 +58,16 @@ SIMBOLOS = [
     "LINKUSDT", "NEARUSDT", "SUIUSDT", "PEPEUSDT"
 ]
 
-# Umbral en USDT para considerar una "pared de compra" (muro de soporte)
-UMBRAL_MURO_USDT = 50000  # $50,000 USDT
+# UMBRAL AJUSTADO A $5,000 USDT PARA CAPTURAR ÓRDENES REALES Y EVITAR SPOOFING
+UMBRAL_MURO_USDT = 5000  # $5,000 USDT
 
 alertas_enviadas = {}
 
 print("🚀 Bot iniciando en la nube...")
 
 # --- MENSAJE INMEDIATO DE PRUEBA Y CONEXIÓN ---
-mensaje_prueba = "⚡ *PRUEBA DE CONEXIÓN EXITOSA*\n\n🟢 El bot de Binance se ha desplegado correctamente en Render y está monitoreando el mercado 24/7."
-exito = enviar_telegram(mensaje_prueba)
-
-if exito:
-    print("✅ Mensaje de prueba enviado a Telegram con éxito.")
-else:
-    print("❌ Falló el envío del mensaje de prueba. Revisa el token o ID.")
+mensaje_prueba = "⚡ *ACTUALIZACIÓN APLICADA*\n\n🎯 Umbral de muros ajustado a **$5,000 USDT** para rastrear ejecuciones reales del 1%."
+enviar_telegram(mensaje_prueba)
 
 # --- BUCLE PRINCIPAL DE RASTREO ---
 while True:
@@ -100,7 +95,7 @@ while True:
                             f"📌 *Par:* `{simbolo}`\n"
                             f"💵 *Precio:* `{precio:,.4f} USDT`\n"
                             f"📊 *Volumen del Muro:* `{total_usdt:,.2f} USDT` (`{cantidad:,.2f}` monedas)\n\n"
-                            f"⚡ _Posible zona de rebote / fuerte demanda._"
+                            f"⚡ _Oportunidad de rebote / orden de soporte activa._"
                         )
                         print(f"🔔 Muro detectado en {simbolo} @ {precio}: {total_usdt} USDT")
                         enviar_telegram(msg)
@@ -110,5 +105,3 @@ while True:
     except Exception as e:
         print(f"⚠️ Error durante el ciclo de escaneo: {e}")
         time.sleep(10)
-
-
