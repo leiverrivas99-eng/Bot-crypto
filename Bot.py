@@ -1,129 +1,86 @@
-import requests
+import os
 import time
-from threading import Thread
+import requests
+import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# --- SERVIDOR PARA MANTENER RENDER ACTIVO 24/7 ---
-class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+# Servidor web invisible para Render (Mantiene el servicio gratuito activo 24/7)
+class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot Binance Spot & Futuros Activo 24/7")
+        self.wfile.write(b"Bot SUI Activo")
+    def log_message(self, format, *args):
+        return
 
-def run_server():
-    server_address = ('', 10000)
-    httpd = HTTPServer(server_address, SimpleHTTPRequestHandler)
-    print("🌐 Servidor interno iniciado en puerto 10000...")
-    httpd.serve_forever()
+def start_dummy_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    server.serve_forever()
 
-Thread(target=run_server, daemon=True).start()
+# Credenciales y Configuración
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "AAGW4GcUn9m17jysrT9CG1E50jPaD3jMSK")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "8721042176")
 
-# --- CONFIGURACIÓN DE TELEGRAM ---
-TOKEN = "8721042176:AAGW4GcUn9mN17jysrT9CGlE50jPaD3jMSk"
-CHAT_ID = "1828560047"
+SYMBOL = "SUIUSDT"
+MIN_WALL_SUI = 170000   # El muro de 170k tokens que buscas
+TAKE_PROFIT_PCT = 0.8   # 0.8% de ganancia
+CHECK_INTERVAL = 15     # Revisión cada 15 segundos
 
-def enviar_telegram(mensaje):
+last_alert_price = 0    
+
+def send_telegram_message(text):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "Markdown"}
     try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        payload = {"chat_id": CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}
-        r = requests.post(url, json=payload, timeout=10)
-        return r.status_code == 200
+        requests.post(url, json=payload, timeout=8)
     except Exception as e:
-        print(f"❌ Error enviando mensaje a Telegram: {e}")
-        return False
+        print(f"Error Telegram: {e}")
 
-# --- OBTENER DATOS SPOT Y FUTUROS ---
-def obtener_libro_spot(simbolo):
-    try:
-        url = f"https://api.binance.com/api/v3/depth?symbol={simbolo}&limit=10"
-        r = requests.get(url, timeout=5)
-        if r.status_code == 200:
-            return r.json()
-    except Exception:
-        pass
-    return None
+def monitor():
+    global last_alert_price
+    print("Iniciando escáner de muros SUI...")
+    send_telegram_message("🟢 *BOT SUI INICIADO*\nEscaneando libros en busca de muros >= 170,000 SUI.")
 
-def obtener_libro_futuros(simbolo):
-    try:
-        url = f"https://fapi.binance.com/fapi/v1/depth?symbol={simbolo}&limit=10"
-        r = requests.get(url, timeout=5)
-        if r.status_code == 200:
-            return r.json()
-    except Exception:
-        pass
-    return None
-
-def sumar_volumen_usdt(lista_ordenes):
-    total = 0.0
-    for precio, cantidad in lista_ordenes:
-        total += float(precio) * float(cantidad)
-    return total
-
-# Criptomonedas a monitorear
-SIMBOLOS = [
-    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", 
-    "XRPUSDT", "ADAUSDT", "DOGEUSDT", "AVAXUSDT", 
-    "LINKUSDT", "NEARUSDT", "SUIUSDT", "PEPEUSDT"
-]
-
-# Umbral de filtro por orden individual ($5,000 USDT)
-UMBRAL_MURO_USDT = 5000 
-
-alertas_enviadas = {}
-
-print("🚀 Bot Spot + Futuros iniciando en la nube...")
-
-# --- MENSAJE DE PRUEBA ---
-mensaje_prueba = "⚡ *BOT ACTUALIZADO: SPOT Y FUTUROS*\n\n🎯 Vigilando libros de ordenes en Spot y Perpetuos para detectar presion de compra/venta."
-enviar_telegram(mensaje_prueba)
-
-# --- BUCLE DE RASTREO ---
-while True:
-    try:
-        for simbolo in SIMBOLOS:
-            spot_data = obtener_libro_spot(simbolo)
-            futuros_data = obtener_libro_futuros(simbolo)
+    while True:
+        try:
+            # Consultar libro de Spot en Binance
+            url = f"https://api.binance.com/api/v3/depth?symbol={SYMBOL}&limit=20"
+            res = requests.get(url, timeout=5).json()
             
-            if not spot_data or not futuros_data:
-                continue
-
-            # Evaluar compras (Bids) y ventas (Asks) en Spot
-            bids_spot_total = sumar_volumen_usdt(spot_data.get("bids", []))
-            asks_spot_total = sumar_volumen_usdt(spot_data.get("asks", []))
-
-            # Evaluar compras (Bids) y ventas (Asks) en Futuros
-            bids_fut_total = sumar_volumen_usdt(futuros_data.get("bids", []))
-            asks_fut_total = sumar_volumen_usdt(futuros_data.get("asks", []))
-
-            # Buscar muros individuales de soporte en Spot (Bids)
-            for precio_str, cantidad_str in spot_data.get("bids", [])[:5]:
-                precio = float(precio_str)
-                total_usdt = precio * float(cantidad_str)
+            bids = res.get("bids", []) # Órdenes de compra (Muros abajo)
+            
+            if bids:
+                best_price = float(bids[0][0])
                 
-                if total_usdt >= UMBRAL_MURO_USDT:
-                    clave_alerta = f"{simbolo}_{precio_str}"
-                    tiempo_actual = time.time()
+                # Revisar cada nivel del libro de órdenes
+                for price_str, qty_str in bids:
+                    price = float(price_str)
+                    qty = float(qty_str)
                     
-                    if clave_alerta not in alertas_enviadas or (tiempo_actual - alertas_enviadas[clave_alerta]) > 900:
-                        alertas_enviadas[clave_alerta] = tiempo_actual
-                        
-                        # Determinar tendencia por presion general de libros
-                        presion_spot = "🟢 COMPRA" if bids_spot_total > asks_spot_total else "🔴 VENTA"
-                        presion_fut = "🟢 COMPRA" if bids_fut_total > asks_fut_total else "🔴 VENTA"
+                    # Si encontramos un muro que supere los 170k SUI
+                    if qty >= MIN_WALL_SUI:
+                        # Evitar repetir la alerta si es casi el mismo precio
+                        if abs(price - last_alert_price) > 0.002:
+                            tp_price = price * (1 + (TAKE_PROFIT_PCT / 100))
+                            
+                            mensaje = (
+                                f"🔥 *¡MURO DE LIQUIDEZ DETECTADO!* 🔥\n\n"
+                                f"🪙 *Token:* SUI / USDT\n"
+                                f"🧱 *Tamaño del Muro:* `{qty:,.0f} SUI`\n"
+                                f"📍 *Precio del Muro (Zona de Compra):* `{price:.4f}`\n"
+                                f"💲 *Precio Actual:* `{best_price:.4f}`\n"
+                                f"🎯 *Take Profit (+0.8%):* `{tp_price:.4f}`\n\n"
+                                f"⚡ *¡Atentos a la reacción del precio en este nivel!*"
+                            )
+                            send_telegram_message(mensaje)
+                            last_alert_price = price
+                            break
+        except Exception as e:
+            print(f"Error en bucle: {e}")
+            
+        time.sleep(CHECK_INTERVAL)
 
-                        msg = (
-                            f"📊 *ANÁLISIS DE MERCADO: {simbolo}*\n\n"
-                            f"🧱 *Muro Spot Detectado:* `{precio:,.4f} USDT` (`${total_usdt:,.2f} USDT`)\n\n"
-                            f"📈 *Presión en Libros (Top 10):*\n"
-                            f"🔹 *Spot:* {presion_spot} (Bids: `${bids_spot_total:,.0f}` | Asks: `${asks_spot_total:,.0f}`)\n"
-                            f"🔹 *Futuros:* {presion_fut} (Bids: `${bids_fut_total:,.0f}` | Asks: `${asks_fut_total:,.0f}`)\n\n"
-                            f"💡 _Si ambos mercados muestran presión de COMPRA, aumenta la probabilidad de subida del 1%._"
-                        )
-                        print(f"🔔 Alerta enviada para {simbolo}")
-                        enviar_telegram(msg)
-                        
-        time.sleep(30)
-
-    except Exception as e:
-        print(f"⚠️ Error en el ciclo: {e}")
-        time.sleep(10)
+if __name__ == "__main__":
+    threading.Thread(target=start_dummy_server, daemon=True).start()
+    monitor()
